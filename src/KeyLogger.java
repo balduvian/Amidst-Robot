@@ -1,10 +1,7 @@
 import java.awt.*;
 import java.awt.event.KeyEvent;
 import java.awt.image.BufferedImage;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.InputStream;
+import java.io.*;
 import java.nio.Buffer;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -36,7 +33,7 @@ public class KeyLogger implements NativeKeyListener {
 		//EXTREME_HILLS(0x606060, 0x72789a, 0x507050, 0x888888),
 		//FOREST(0x056621, 0x22551c),
 		//TAIGA(0x0b6659, 0x163933, 0x31554a, 0x243f36),
-		//SWAMP(0x07f9b2),
+		SWAMP(0x07f9b2),
 		//RIVER(0x0000ff, 0xa0a0ff),
 		//ICE_PLAINS(0xffffff),
 		//ICE_MOUNTAINS(0xa0a0a0),
@@ -65,6 +62,7 @@ public class KeyLogger implements NativeKeyListener {
 	}
 
 	private static final Biome[] BIOMES = {
+		Biome.SWAMP,
 		Biome.FLOWER_FOREST,
 		Biome.ICE_PLAINS_SPIKES,
 		Biome.MUSHROOM_ISLAND,
@@ -74,10 +72,18 @@ public class KeyLogger implements NativeKeyListener {
 		Biome.JUNGLE,
 	};
 
+	public static final int DEFAULT_POPUP_WAIT = 200;
+	public static final int DEFAULT_SCREENSHOT_WAIT = 550;
+
 	int x0;
 	int y0;
 	int x1;
 	int y1;
+
+	int checked;
+
+	int popupWait;
+	int screenShotWait;
 
 	Robot robot;
 
@@ -88,22 +94,15 @@ public class KeyLogger implements NativeKeyListener {
 	boolean[] bestBiomes;
 
 	public KeyLogger() throws IOException {
-		x0 = -1;
-		y0 = -1;
-		x1 = -1;
-		y1 = -1;
+		checkForPreferences();
 		try {
 			robot = new Robot();
-		} catch (AWTException e) {
-			e.printStackTrace();
-		}
+		} catch (AWTException ex) {}
 	}
 
-	public void nativeKeyPressed(NativeKeyEvent nativeKeyEvent) {
-	}
+	public void nativeKeyPressed(NativeKeyEvent nativeKeyEvent) {}
 
-	public void nativeKeyReleased(NativeKeyEvent nativeKeyEvent) {
-	}
+	public void nativeKeyReleased(NativeKeyEvent nativeKeyEvent) {}
 
 	public void nativeKeyTyped(NativeKeyEvent nativeKeyEvent) {
 		Point point = null;
@@ -130,15 +129,62 @@ public class KeyLogger implements NativeKeyListener {
 				continuous.cycle();
 				break;
 			case('s'):
-				continuous = new Continuous();
-				continuous.start();
+				if(continuous == null || !continuous.running) {
+					continuous = new Continuous();
+					continuous.start();
+				}
 				break;
 			case('p'):
 				continuous.setRunning(false);
 				try {
 					continuous.join();
 				}catch (Exception ex) {}
-				System.out.println("BEST seed: " + bestSeed + " total: " + bestCount + " found:" + biomeList(bestBiomes));
+				System.out.println("BEST seed out of " + checked + ": " + bestSeed + " total: " + bestCount + " found:" + biomeList(bestBiomes));
+		}
+	}
+
+	private void checkForPreferences() {
+		File f = new File(".settings");
+		if(f.exists()) {
+			try {
+				FileInputStream inp = new FileInputStream(f);
+				//TODO reading
+			} catch(Exception ex) {}
+			x0 = -1;
+			x1 = -1;
+			y0 = -1;
+			y1 = -1;
+			popupWait = DEFAULT_POPUP_WAIT;
+			screenShotWait = DEFAULT_SCREENSHOT_WAIT;
+			bestSeed = "none";
+			bestCount = 0;
+			bestBiomes = new boolean[BIOMES.length];
+			checked = 0;
+		} else {
+			try {
+				FileOutputStream out = new FileOutputStream(f);
+				out.write("x0: -1\n".getBytes());
+				out.write("x1: -1\n".getBytes());
+				out.write("y0: -1\n".getBytes());
+				out.write("y1: -1\n".getBytes());
+				out.write("best seed: none\n".getBytes());
+				out.write("best biome count: 0\n".getBytes());
+				out.write("biome list: none\n".getBytes());
+				out.write(("popup wait: " + DEFAULT_POPUP_WAIT + "\n").getBytes());
+				out.write(("screenshot wait: " + DEFAULT_SCREENSHOT_WAIT + "\n").getBytes());
+				out.write("checked: 0".getBytes());
+				out.close();
+			} catch (Exception ex) {}
+			x0 = -1;
+			x1 = -1;
+			y0 = -1;
+			y1 = -1;
+			popupWait = DEFAULT_POPUP_WAIT;
+			screenShotWait = DEFAULT_SCREENSHOT_WAIT;
+			bestSeed = "none";
+			bestCount = 0;
+			bestBiomes = new boolean[BIOMES.length];
+			checked = 0;
 		}
 	}
 
@@ -159,7 +205,7 @@ public class KeyLogger implements NativeKeyListener {
 	private void newSeed(String seed) {
 		robot.keyPress(KeyEvent.VK_CONTROL);
 		robot.keyPress(KeyEvent.VK_N);
-		slep(500);
+		slep(popupWait);
 		robot.keyRelease(KeyEvent.VK_N);
 		robot.keyRelease(KeyEvent.VK_CONTROL);
 		int len = seed.length();
@@ -222,10 +268,15 @@ public class KeyLogger implements NativeKeyListener {
 	private String biomeList(boolean[] found) {
 		StringBuilder builder = new StringBuilder();
 		int l = BIOMES.length;
+		boolean none = true;
 		for(int i = 0; i < l; ++i) {
 			if(found[i]) {
 				builder.append(' ' + BIOMES[i].name());
+				none = false;
 			}
+		}
+		if(none) {
+			builder.append(" none");
 		}
 		return builder.toString();
 	}
@@ -244,16 +295,17 @@ public class KeyLogger implements NativeKeyListener {
 		public void cycle() {
 			String seed = genSeedNumber();
 			newSeed(seed);
-			slep(2000);
+			slep(screenShotWait);
 			ScanContainer scan = scanScreenshot(screenshot());
+			++checked;
 			int total = scan.count;
 			if(total > bestCount) {
 				bestCount = total;
 				bestSeed = seed;
 				bestBiomes = scan.found;
-				System.out.println("NEW BEST seed: " + bestSeed + " total: " + bestCount + " found:" + biomeList(bestBiomes));
-			} else {
-				System.out.println("seed: " + seed + " total: " + total + " found:" + biomeList(scan.found));
+				System.out.println("NEW BEST seed @" + checked + ": " + bestSeed + " total: " + bestCount + " found:" + biomeList(bestBiomes));
+			} else if (total == bestCount){
+				System.out.println("new seed @" + checked + ": " + seed + " total: " + total + " found:" + biomeList(scan.found));
 			}
 		}
 
